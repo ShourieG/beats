@@ -233,7 +233,7 @@ func (rf *requestFactory) collectResponse(stdCtx context.Context, trCtx *transfo
 				break
 			}
 
-			timed.Wait(stdCtx, time.Duration(rf.fieldCheck.CheckIntervalMs)*time.Millisecond)
+			timed.Wait(stdCtx, time.Duration(rf.fieldCheck.RetryIntervalMs)*time.Millisecond)
 			currentTries++
 		}
 	} else {

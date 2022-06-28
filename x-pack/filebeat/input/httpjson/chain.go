@@ -98,5 +98,5 @@ type fieldCheckConfig struct {
 	Field           string      `config:"field"`
 	ExpectedValue   interface{} `config:"expected_value"`
 	MaxRetries      int         `config:"max_retries" default:"1"`
-	CheckIntervalMs int         `config:"check_interval_ms" default:"5000"`
+	RetryIntervalMs int         `config:"retry_interval_ms" default:"5000"`
 }
