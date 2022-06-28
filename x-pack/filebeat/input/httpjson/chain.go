@@ -73,9 +73,10 @@ type chainConfig struct {
 // will contain replace string with original URL to make a skeleton for the
 // call request.
 type stepConfig struct {
-	Request  requestChainConfig  `config:"request"`
-	Response responseChainConfig `config:"response,omitempty"`
-	Replace  string              `config:"replace,omitempty"`
+	Request    requestChainConfig  `config:"request"`
+	Response   responseChainConfig `config:"response,omitempty"`
+	Replace    string              `config:"replace,omitempty"`
+	FieldCheck fieldCheckConfig    `config:"field_check,omitempty"`
 }
 
 type requestChainConfig struct {
@@ -90,4 +91,12 @@ type requestChainConfig struct {
 type responseChainConfig struct {
 	Transforms transformsConfig `config:"transforms"`
 	Split      *splitConfig     `config:"split"`
+}
+
+type fieldCheckConfig struct {
+	Enabled         bool        `config:"enabled"`
+	Field           string      `config:"field"`
+	ExpectedValue   interface{} `config:"expected_value"`
+	MaxRetries      int         `config:"max_retries" default:"1"`
+	CheckIntervalMs int         `config:"check_interval_ms" default:"5000"`
 }

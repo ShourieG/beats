@@ -36,6 +36,14 @@ func (c config) Validate() error {
 	if c.Interval <= 0 {
 		return errors.New("interval must be greater than 0")
 	}
+
+	for _, c := range c.Chain {
+		if c.Step.FieldCheck.Enabled {
+			if len(c.Step.FieldCheck.Field) == 0 || c.Step.FieldCheck.ExpectedValue == nil {
+				return errors.New("field check is enabled but values for field/expected value are missing")
+			}
+		}
+	}
 	return nil
 }
 

@@ -10,15 +10,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
+	"time"
 
 	"github.com/PaesslerAG/jsonpath"
 
 	inputcursor "github.com/elastic/beats/v7/filebeat/input/v2/input-cursor"
 	"github.com/elastic/elastic-agent-libs/logp"
 	"github.com/elastic/elastic-agent-libs/mapstr"
+	"github.com/elastic/go-concert/timed"
 )
 
 const requestNamespace = "request"
@@ -101,6 +105,7 @@ type requestFactory struct {
 	log        *logp.Logger
 	encoder    encoderFunc
 	replace    string
+	fieldCheck fieldCheckConfig
 }
 
 func newRequestFactory(config config, log *logp.Logger) []*requestFactory {
@@ -132,6 +137,7 @@ func newRequestFactory(config config, log *logp.Logger) []*requestFactory {
 			log:        log,
 			encoder:    registeredEncoders[config.Request.EncodeAs],
 			replace:    ch.Step.Replace,
+			fieldCheck: ch.Step.FieldCheck,
 		}
 		rfs = append(rfs, rf)
 	}
@@ -195,15 +201,78 @@ func newRequester(
 
 // collectResponse returns response from provided request
 func (rf *requestFactory) collectResponse(stdCtx context.Context, trCtx *transformContext, r *requester) (*http.Response, error) {
-	req, err := rf.newHTTPRequest(stdCtx, trCtx)
+	var err error
+	var httpResp *http.Response
+	var req *http.Request
+
+	req, err = rf.newHTTPRequest(stdCtx, trCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create http request: %w", err)
 	}
-	httpResp, err := r.client.do(stdCtx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute http client.Do: %w", err)
+
+	if rf.fieldCheck.Enabled {
+		currentTries := 0
+
+		for currentTries < rf.fieldCheck.MaxRetries {
+			httpResp, err = r.client.do(stdCtx, req)
+			if err != nil {
+				return nil, fmt.Errorf("failed to execute http client.Do: %w", err)
+			}
+
+			body, err := ioutil.ReadAll(httpResp.Body)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read http response body : %w", err)
+			}
+
+			checked, err := checkExpectedField(rf.fieldCheck.Field, rf.fieldCheck.ExpectedValue, body)
+			if err != nil {
+				rf.log.Errorf("field check for http response failed with error : %w", err)
+				break
+			}
+			if checked {
+				break
+			}
+
+			timed.Wait(stdCtx, time.Duration(rf.fieldCheck.CheckIntervalMs)*time.Millisecond)
+			currentTries++
+		}
+	} else {
+		httpResp, err = r.client.do(stdCtx, req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute http client.Do: %w", err)
+		}
 	}
 	return httpResp, nil
+}
+
+func checkExpectedField(field string, expectedValue interface{}, body []byte) (bool, error) {
+	var response map[string]interface{}
+	var valueToCheck interface{}
+	fieldArr := strings.Split(field, ".")
+	err := json.Unmarshal(body, &response)
+	if err != nil {
+		return false, fmt.Errorf("failed to unmarshall result for field check : %w", err)
+	}
+
+	valueToCheck = fetchVal(fieldArr[0], response)
+	if len(fieldArr) > 1 {
+		for i := 1; i < len(fieldArr); i++ {
+			if reflect.TypeOf(valueToCheck).Kind() == reflect.Map {
+				mapVal, ok := valueToCheck.(map[string]interface{})
+				if !ok {
+					return false, fmt.Errorf("failed to typecast expectedValue field for field check")
+				}
+				valueToCheck = fetchVal(fieldArr[i], mapVal)
+			} else {
+				return false, fmt.Errorf("expected value for checkfield did not match")
+			}
+		}
+	}
+	return (valueToCheck == expectedValue), nil
+}
+
+func fetchVal(key string, from map[string]interface{}) interface{} {
+	return from[key]
 }
 
 // generateNewUrl returns new url value using replacement from oldUrl with ids
