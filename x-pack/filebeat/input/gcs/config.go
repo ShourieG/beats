@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"reflect"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -131,6 +132,61 @@ func (c authConfig) Validate() error {
 
 	return fmt.Errorf("no authentication credentials were configured or detected " +
 		"(credentials_file, credentials_json, and application default credentials (ADC))")
+}
+
+// isConfigEmpty checks if the provided configuration value is empty.
+// It uses reflection to determine if the value is empty based on its kind.
+// This function is generic and can handle any type T.
+// Since this runs only once per source during initialization,
+// it should not be a performance concern.
+func isConfigEmpty[T any](value T) bool {
+	v := reflect.ValueOf(value)
+	return isEmpty(v)
+}
+
+// isEmpty checks if a reflect.Value is empty.
+// It handles various types including pointers, slices, maps, structs, arrays, and basic types.
+// It returns true if the value is empty, false otherwise.
+func isEmpty(v reflect.Value) bool {
+	// Handles cases like reflect.ValueOf(nil) where nil is untyped,
+	// or an uninitialized interface variable.
+	if !v.IsValid() {
+		return true
+	}
+
+	switch v.Kind() {
+	case reflect.Ptr, reflect.Interface:
+		// v.IsNil() checks if the pointer or interface is nil.
+		// If it is nil, we consider it empty and return.
+		if v.IsNil() {
+			return true
+		}
+		return isEmpty(v.Elem())
+
+	case reflect.Slice, reflect.Map:
+		return v.IsNil() || v.Len() == 0
+
+	case reflect.Struct:
+		// Recursively check each field.
+		for i := 0; i < v.NumField(); i++ {
+			if !isEmpty(v.Field(i)) {
+				return false
+			}
+		}
+		return true
+
+	case reflect.Array:
+		for i := 0; i < v.Len(); i++ {
+			if !isEmpty(v.Index(i)) {
+				return false
+			}
+		}
+		return true
+
+	// 'default:' handles basic types like int, string, bool, float, complex etc.
+	default:
+		return v.IsZero()
+	}
 }
 
 // defaultConfig returns the default configuration for the input

@@ -116,7 +116,9 @@ func tryOverrideOrDefault(cfg config, b bucket) bucket {
 	if len(b.FileSelectors) == 0 && len(cfg.FileSelectors) != 0 {
 		b.FileSelectors = cfg.FileSelectors
 	}
-	b.ReaderConfig = cfg.ReaderConfig
+	if isConfigEmpty(b.ReaderConfig) {
+		b.ReaderConfig = cfg.ReaderConfig
+	}
 
 	return b
 }
